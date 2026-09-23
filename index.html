@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TNCe Pickup</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;color:#17202a}.wrap{max-width:720px;margin:auto;padding:20px}.card{background:#fff;border-radius:16px;padding:20px;margin:14px 0;box-shadow:0 4px 18px #0001}h1{margin:0 0 8px}.muted{color:#68737d}.btn{display:inline-block;border:0;border-radius:10px;padding:13px 18px;font-weight:700;cursor:pointer;text-decoration:none}.primary{background:#111;color:#fff}.green{background:#16803c;color:#fff}.danger{background:#a61b1b;color:#fff}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #ccd3da;border-radius:9px;margin-top:5px}.qr{width:260px;max-width:100%;display:block;margin:15px auto}.status{font-size:20px;font-weight:800}.hidden{display:none}.row{display:flex;justify-content:space-between;gap:10px;align-items:center;border-bottom:1px solid #eee;padding:10px 0}
+</style>
+</head>
+<body><div class="wrap"><div id="app"></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function call(fn,args=[]){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));}
+function fail(e){alert(e.message||e);}
+async function init(){
+ const p=new URLSearchParams(location.search), token=p.get('t'), order=p.get('order');
+ if(token){return customer(token);}
+ admin();
+}
+async function admin(){
+ $('#app').innerHTML='<div class="card"><h1>📦 TNCe Pickup Manager</h1><p class="muted">Create orders and automatically generate a unique QR code.</p><form id="f"><div class="grid"><label>Customer<input name="customer" required></label><label>Order No.<input name="order" placeholder="AUTO"></label></div><label>Item<input name="item" required></label><div class="grid"><label>Qty<input name="qty" type="number" min="1" value="1"></label><label>Notes<input name="notes"></label></div><br><button class="btn primary">CREATE ORDER + QR</button></form></div><div id="result"></div><div class="card"><h2>Orders</h2><div id="list">Loading...</div></div>';
+ $('#f').onsubmit=async e=>{e.preventDefault();let fd=new FormData(e.target), o=Object.fromEntries(fd);try{let r=await call('createOrder',[o]);showQR(r);loadOrders();e.target.reset();}catch(x){fail(x)}};
+ loadOrders();
+}
+async function loadOrders(){try{let rows=await call('listOrders');$('#list').innerHTML=rows.length?rows.map(r=>'<div class="row"><div><b>'+esc(r.order)+'</b> — '+esc(r.customer)+'<br><span class="muted">'+esc(r.item)+' × '+esc(r.qty)+'</span></div><span class="status">'+(r.status==='PICKED UP'?'🟢':'🟡')+' '+esc(r.status)+'</span></div>').join(''):'No orders yet.';}catch(e){$('#list').textContent=e.message||e;}}
+function showQR(r){$('#result').innerHTML='<div class="card"><h2>QR Ready: '+esc(r.order)+'</h2><p>'+esc(r.customer)+' — '+esc(r.item)+' × '+esc(r.qty)+'</p><div id="qr" class="qr"></div><p style="text-align:center"><a class="btn primary" href="'+esc(r.url)+'" target="_blank">OPEN PICKUP PAGE</a></p><p class="muted" style="text-align:center">Print this QR and attach it to the finished item.</p></div>';new QRCode($('#qr'),{text:r.url,width:260,height:260});}
+async function customer(token){
+ $('#app').innerHTML='<div class="card" id="c">Loading order...</div>';
+ try{let r=await call('getOrder',[token]); if(!r){$('#c').innerHTML='<h2>❌ Order not found</h2>';return;}
+ $('#c').innerHTML='<h1>📦 Pickup Confirmation</h1><p class="muted">Please confirm after receiving your item.</p><hr><p><b>Order:</b> '+esc(r.order)+'</p><p><b>Customer:</b> '+esc(r.customer)+'</p><p><b>Item:</b> '+esc(r.item)+' × '+esc(r.qty)+'</p><p><b>Status:</b> <span class="status">'+esc(r.status)+'</span></p><div id="action"></div>';
+ if(r.status==='PICKED UP') $('#action').innerHTML='<p class="green btn">✅ PICKUP ALREADY CONFIRMED</p>';
+ else $('#action').innerHTML='<button id="confirm" class="btn green">CONFIRM PICKUP</button>';
+ if(r.status!=='PICKED UP') $('#confirm').onclick=async()=>{if(!confirm('Confirm that you received this order?'))return;try{let x=await call('confirmPickup',[token]);$('#action').innerHTML='<p class="status">✅ Pickup recorded successfully.</p><p>'+esc(x.time)+'</p><a class="btn primary" href="https://m.me/xxtian0587" target="_blank">💬 MESSAGE ME ON MESSENGER</a>';}catch(e){fail(e)}};
+ }catch(e){fail(e);}
+}
+init();
+</script></body></html>
